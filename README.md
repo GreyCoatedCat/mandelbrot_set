@@ -4,19 +4,41 @@ Program ini menghitung fraktal ala-Mandelbrot secara paralel di GPU (atau
 CPU) menggunakan OpenCL, dan bisa mereproduksi gaya render populer "satellite
 antenna" (Seahorse Valley) dengan palet warna oranye-biru-putih klasik.
 
+## Hasil Render
+
+Gambar di bawah ditampilkan langsung dari file hasil render program Mandelbrot.
+Simpan hasil render sebagai `images/mandelbrot.png` di repository agar gambar
+juga muncul di GitHub.
+
+![Hasil render Mandelbrot](images/mandelbrot.png)
+
+Untuk menghasilkan file gambar tersebut, jalankan program lalu konversi output
+PPM ke PNG:
+
+```bash
+mkdir -p images
+./fractal-render --iter=2000 --out=images/mandelbrot_render.ppm
+convert images/mandelbrot_render.ppm images/mandelbrot.png
+```
+
+Jika ImageMagick belum terpasang, instal dengan `sudo apt install imagemagick`.
+Pastikan file `images/mandelbrot.png` ikut di-commit ke repository. Markdown
+hanya menampilkan gambar yang benar-benar tersedia pada path tersebut; README
+tidak bisa memunculkan file lokal yang belum diunggah.
+
 ## Isi
-- `mandelbrot_kernel.cl` — kernel OpenCL (4 jenis fraktal + palet warna klasik)
-- `mandelbrot_opencl.cpp` — program host (parsing argumen, device, render, simpan gambar)
+- `fractal_kernel.cl` — kernel OpenCL (4 jenis fraktal + palet warna klasik)
+- `fractal_renderer.cpp` — program host (parsing argumen, device, render, simpan gambar)
 
 ## 1. Install OpenCL & compile
 
 ```bash
 sudo apt install ocl-icd-opencl-dev nvidia-opencl-dev   # sesuaikan vendor GPU Anda
-g++ -std=c++17 mandelbrot_opencl.cpp -o mandelbrot -lOpenCL
+g++ -std=c++17 fractal_renderer.cpp -o fractal-render -lOpenCL
 ```
 macOS: ganti `-lOpenCL` dengan `-framework OpenCL`.
 
-Cek device: `./mandelbrot info`
+Cek device: `./fractal-render info`
 
 ## 2. Mereproduksi gambar bergaya "satellite antenna" (Seahorse Valley)
 
@@ -39,11 +61,11 @@ bawah, coba beberapa nilai `zoomlevel`, dan bandingkan hasilnya dengan
 gambar referensimu:
 
 ```bash
-./mandelbrot --preset=satellite_antenna --zoomlevel=14 --iter=2000 --out=coba_14.ppm
-./mandelbrot --preset=satellite_antenna --zoomlevel=16 --iter=3000 --out=coba_16.ppm
-./mandelbrot --preset=satellite_antenna --zoomlevel=18 --iter=4000 --out=coba_18.ppm
-./mandelbrot --preset=satellite_antenna --zoomlevel=20 --iter=5000 --out=coba_20.ppm
-./mandelbrot --preset=satellite_antenna --zoomlevel=22 --iter=6000 --out=coba_22.ppm
+./fractal-render --preset=satellite_antenna --zoomlevel=14 --iter=2000 --out=coba_14.ppm
+./fractal-render --preset=satellite_antenna --zoomlevel=16 --iter=3000 --out=coba_16.ppm
+./fractal-render --preset=satellite_antenna --zoomlevel=18 --iter=4000 --out=coba_18.ppm
+./fractal-render --preset=satellite_antenna --zoomlevel=20 --iter=5000 --out=coba_20.ppm
+./fractal-render --preset=satellite_antenna --zoomlevel=22 --iter=6000 --out=coba_22.ppm
 ```
 
 `--zoomlevel=N` mengatur lebar area = `3.0769 / 2^N` (jadi makin besar N,
@@ -62,12 +84,12 @@ Palet oranye-biru-putih ini sekarang jadi default untuk SEMUA render (bukan
 cuma preset satellite_antenna) — jadi cukup jalankan Mandelbrot standar dan
 warnanya sudah bergaya serupa:
 ```bash
-./mandelbrot --iter=2000
+./fractal-render --iter=2000
 ```
 Atur `--palette=N` untuk mengubah lebar 1 siklus warna (default 20; makin
 kecil = pita warna lebih rapat/banyak, makin besar = lebih lebar/halus):
 ```bash
-./mandelbrot --preset=satellite_antenna --zoomlevel=16 --palette=8 --iter=3000
+./fractal-render --preset=satellite_antenna --zoomlevel=16 --palette=8 --iter=3000
 ```
 
 ## 3. Semua flag yang tersedia
@@ -86,7 +108,7 @@ kecil = pita warna lebih rapat/banyak, makin besar = lebih lebar/halus):
 | `--zoomlevel` | Kedalaman zoom untuk preset (lebar = 3.0769/2^N)   | 18               |
 | `--cpu_only`  | Paksa pakai device CPU (tidak fallback ke GPU)     | nonaktif         |
 | `--gpu_use`   | Paksa pakai device GPU (error kalau GPU tidak ada) | nonaktif         |
-| `--out`     | Nama file output                                     | mandelbrot.ppm   |
+| `--out`     | Nama file output                                     | mandelbrot_render.ppm   |
 
 Catatan `--cpu_only` / `--gpu_use`:
 - Tidak dipakai keduanya sekaligus (program akan menolak).
@@ -131,8 +153,8 @@ ukurannya dipilihkan otomatis, bukan oleh Anda.
 ## 4. Melihat / mengonversi hasil
 
 ```bash
-convert mandelbrot.ppm mandelbrot.png     # ImageMagick
-python3 -c "from PIL import Image; Image.open('mandelbrot.ppm').save('mandelbrot.png')"
+convert mandelbrot_render.ppm mandelbrot.png     # ImageMagick
+python3 -c "from PIL import Image; Image.open('mandelbrot_render.ppm').save('mandelbrot.png')"
 ```
 
 ## Kenapa gambar tampak full hitam saat iterasi tinggi?
@@ -145,4 +167,26 @@ matematis).
 ## Kustomisasi lanjutan
 - **Warna**: edit array `stops[]` di `classicPalette()` pada kernel untuk skema warna lain.
 - **Jenis fraktal baru**: tambah nilai enum `TYPE_...` + cabang `if` pada kernel (pola sama seperti Burning Ship/Tricorn).
-- **Presisi**: kernel pakai `double`. Kalau device tidak dukung `cl_khr_fp64` (cek `./mandelbrot info`), ganti semua `double` di kernel jadi `float` -- tapi ini akan membatasi seberapa dalam zoom bisa dilakukan sebelum muncul artefak pixelated.
+- **Presisi**: kernel pakai `double`. Kalau device tidak dukung `cl_khr_fp64` (cek `./fractal-render info`), ganti semua `double` di kernel jadi `float` -- tapi ini akan membatasi seberapa dalam zoom bisa dilakukan sebelum muncul artefak pixelated.
+
+
+## Build dan jalankan
+
+```bash
+g++ -std=c++17 fractal_renderer.cpp -o fractal-render -lOpenCL
+./fractal-render info
+./fractal-render --iter=2000 --out=mandelbrot_render.ppm
+```
+
+Untuk preset Seahorse Valley:
+
+```bash
+./fractal-render --preset=satellite_antenna --zoomlevel=18 --iter=4000 --out=seahorse_valley.ppm
+convert seahorse_valley.ppm seahorse_valley.png
+```
+
+File `.ppm` adalah format output langsung dari program. Konversi ke PNG membutuhkan ImageMagick (`convert`) atau Pillow. Jika ingin menampilkan hasil di GitHub, simpan PNG ke `images/` lalu gunakan:
+
+```markdown
+![Mandelbrot render](images/seahorse_valley.png)
+```

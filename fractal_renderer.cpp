@@ -1,19 +1,19 @@
-// mandelbrot_opencl.cpp
+// fractal_renderer.cpp
 //
 // Simulasi berbagai fraktal ala-Mandelbrot menggunakan OpenCL, dengan preset
 // khusus untuk mereproduksi gaya "satellite antenna" (zoom ke Seahorse
 // Valley, palet warna oranye-biru-putih klasik).
 //
 // Cara compile (Linux, dengan OpenCL ICD terpasang):
-//   g++ -std=c++17 mandelbrot_opencl.cpp -o mandelbrot -lOpenCL
+//   g++ -std=c++17 fractal_renderer.cpp -o fractal-render -lOpenCL
 // macOS:
-//   g++ -std=c++17 mandelbrot_opencl.cpp -o mandelbrot -framework OpenCL
+//   g++ -std=c++17 fractal_renderer.cpp -o fractal-render -framework OpenCL
 //
 // ============================== CARA PAKAI ==============================
 //
-//   ./mandelbrot info                 -> info device OpenCL, lalu keluar
+//   ./fractal-render info                 -> info device OpenCL, lalu keluar
 //
-//   ./mandelbrot [--key=value ...]     -> render (semua flag opsional)
+//   ./fractal-render [--key=value ...]     -> render (semua flag opsional)
 //
 //   Flag umum:
 //     --width=N --height=N --iter=N --localx=N --localy=N
@@ -42,8 +42,8 @@
 //         datanya, ini pendekatan yang paling aman & bisa diverifikasi.
 //
 //   Contoh:
-//     ./mandelbrot --preset=satellite_antenna --zoomlevel=16 --iter=3000
-//     ./mandelbrot --preset=satellite_antenna --zoomlevel=20 --iter=5000 --out=coba2.ppm
+//     ./fractal-render --preset=satellite_antenna --zoomlevel=16 --iter=3000
+//     ./fractal-render --preset=satellite_antenna --zoomlevel=20 --iter=5000 --out=coba2.ppm
 //
 // Output: file .ppm (bisa dibuka GIMP/IrfanView, atau dikonversi ke PNG --
 // lihat README.md)
@@ -68,6 +68,7 @@
 #include <chrono>
 #include <unordered_map>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 enum FractalType {
@@ -98,12 +99,20 @@ static void checkError(cl_int err, const char* operation) {
 static void savePPM(const std::string& filename, const std::vector<unsigned char>& rgba,
                      int width, int height) {
     std::ofstream out(filename, std::ios::binary);
+    if (!out) {
+        std::cerr << "Gagal membuka file output: " << filename << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
     out << "P6\n" << width << " " << height << "\n255\n";
     for (int i = 0; i < width * height; i++) {
         unsigned char rgb[3] = { rgba[i * 4 + 0], rgba[i * 4 + 1], rgba[i * 4 + 2] };
         out.write(reinterpret_cast<char*>(rgb), 3);
     }
     out.close();
+    if (!out) {
+        std::cerr << "Gagal menulis file output: " << filename << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
 }
 
 static std::unordered_map<std::string, std::string> parseFlags(int argc, char** argv) {
@@ -134,7 +143,10 @@ static FractalType parseFractalType(const std::string& name) {
     if (n == "julia") return TYPE_JULIA;
     if (n == "burningship" || n == "burning_ship" || n == "ship") return TYPE_BURNING_SHIP;
     if (n == "tricorn" || n == "mandelbar") return TYPE_TRICORN;
-    return TYPE_MANDELBROT;
+    if (n == "mandelbrot") return TYPE_MANDELBROT;
+    std::cerr << "Jenis fraktal tidak dikenal: " << name
+              << ". Pilih mandelbrot, julia, burningship, atau tricorn." << std::endl;
+    std::exit(EXIT_FAILURE);
 }
 
 static std::string fractalTypeName(FractalType t) {
@@ -196,6 +208,19 @@ int main(int argc, char** argv) {
     int localX  = std::stoi(getFlag(flags, "localx", "0"));
     int localY  = std::stoi(getFlag(flags, "localy", "0"));
 
+    if (width < 2 || height < 2) {
+        std::cerr << "Resolusi harus minimal 2x2 piksel." << std::endl;
+        return EXIT_FAILURE;
+    }
+    if (maxIter < 1) {
+        std::cerr << "--iter harus lebih besar dari 0." << std::endl;
+        return EXIT_FAILURE;
+    }
+    if (localX < 0 || localY < 0 || ((localX == 0) != (localY == 0))) {
+        std::cerr << "--localx dan --localy harus sama-sama 0 atau sama-sama positif." << std::endl;
+        return EXIT_FAILURE;
+    }
+
     double minReal = -2.5, maxReal = 1.0, minImag = -1.25, maxImag = 1.25;
     bool userSetArea = flags.count("xmin") || flags.count("xmax") ||
                         flags.count("ymin") || flags.count("ymax");
@@ -235,7 +260,16 @@ int main(int argc, char** argv) {
     double juliaCRe = std::stod(getFlag(flags, "cre", "-0.7"));
     double juliaCIm = std::stod(getFlag(flags, "cim", "0.27015"));
     double paletteScale = std::stod(getFlag(flags, "palette", "20.0"));
-    std::string outFile = getFlag(flags, "out", "mandelbrot.ppm");
+    std::string outFile = getFlag(flags, "out", "mandelbrot_render.ppm");
+
+    if (!std::isfinite(power) || power <= 0.0) {
+        std::cerr << "--power harus berupa angka finite dan lebih besar dari 0." << std::endl;
+        return EXIT_FAILURE;
+    }
+    if (!std::isfinite(paletteScale) || paletteScale <= 0.0) {
+        std::cerr << "--palette harus berupa angka finite dan lebih besar dari 0." << std::endl;
+        return EXIT_FAILURE;
+    }
 
     if (fractalType == TYPE_JULIA && !userSetArea && preset != "satellite_antenna") {
         minReal = -1.5; maxReal = 1.5; minImag = -1.5; maxImag = 1.5;
@@ -337,7 +371,7 @@ int main(int argc, char** argv) {
 #endif
     checkError(err, "clCreateCommandQueue");
 
-    std::string kernelSource = readFile("mandelbrot_kernel.cl");
+    std::string kernelSource = readFile("fractal_kernel.cl");
     const char* sourcePtr = kernelSource.c_str();
     size_t sourceLen = kernelSource.size();
     cl_program program = clCreateProgramWithSource(context, 1, &sourcePtr, &sourceLen, &err);

@@ -6,6 +6,8 @@
 // antenna" / Seahorse Valley: cincin oranye di luar, spiral biru/putih di
 // dalam, hitam solid untuk titik yang masuk ke dalam set).
 
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
+
 #define TYPE_MANDELBROT   0
 #define TYPE_JULIA        1
 #define TYPE_BURNING_SHIP 2
