@@ -7,8 +7,6 @@ antenna" (Seahorse Valley) dengan palet warna oranye-biru-putih klasik.
 ## Hasil Render
 
 Gambar di bawah ditampilkan langsung dari file hasil render program Mandelbrot.
-Simpan hasil render sebagai `images/mandelbrot.png` di repository agar gambar
-juga muncul di GitHub.
 
 ![Hasil render Mandelbrot](images/mandelbrot.png)
 
